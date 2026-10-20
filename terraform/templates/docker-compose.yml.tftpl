@@ -1,0 +1,120 @@
+# NetBird with its embedded identity provider: netbird-server (management, signal, relay, STUN), dashboard, Traefik
+# (TLS), and the routing peer (started by vpn-configure once enrolled). Logs go to CloudWatch, not to disk.
+x-logging: &logging
+  driver: awslogs
+  options: &logopts
+    awslogs-region: ${region}
+    mode: non-blocking
+    max-buffer-size: 4m
+    tag: "{{.Name}}"
+
+services:
+  traefik:
+    image: ${images.traefik}
+    container_name: vpn-traefik
+    restart: unless-stopped
+    networks:
+      netbird:
+        ipv4_address: 172.30.0.10
+    command:
+      - "--log.level=INFO"
+      - "--log.format=json"
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.fields.headers.defaultmode=drop"
+      # Static routes from a file: Traefik never gets the Docker socket (which is root on the host).
+      - "--providers.file.filename=/etc/traefik/dynamic.yaml"
+      - "--providers.file.watch=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.allowACMEByPass=true"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=0"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.email=${letsencrypt_email}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--serverstransport.forwardingtimeouts.responseheadertimeout=0s"
+      - "--serverstransport.forwardingtimeouts.idleconntimeout=0s"
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+      - letsencrypt:/letsencrypt
+    logging:
+      <<: *logging
+      options:
+        <<: *logopts
+        awslogs-group: /${name}/traefik
+
+  dashboard:
+    image: ${images.dashboard}
+    container_name: vpn-dashboard
+    restart: unless-stopped
+    networks: [netbird]
+    env_file: [./dashboard.env]
+    logging:
+      <<: *logging
+      options:
+        <<: *logopts
+        awslogs-group: /${name}/dashboard
+
+  netbird-server:
+    image: ${images.server}
+    container_name: vpn-netbird-server
+    restart: unless-stopped
+    networks: [netbird]
+    environment:
+      # The first-run /api/setup (called by bootstrap over localhost) returns a 1-day token that configures the
+      # account. Setup is refused once an account exists, and the public proxy blocks /api/setup anyway.
+      - NB_SETUP_PAT_ENABLED=true
+    ports:
+      - "3478:3478/udp"
+      - "127.0.0.1:8081:80" # host-only API for bootstrap and vpn-configure
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml:ro
+    command: ["--config", "/etc/netbird/config.yaml"]
+    logging:
+      <<: *logging
+      options:
+        <<: *logopts
+        awslogs-group: /${name}/netbird-server
+
+  netbird-client:
+    image: ${images.client}
+    container_name: vpn-routing-peer
+    profiles: [routing-peer]
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE]
+    environment:
+      - NB_MANAGEMENT_URL=https://${domain}
+      - NB_HOSTNAME=${name}-routing-peer
+    env_file:
+      # NB_SETUP_KEY for the first start only; vpn-configure deletes the file once the peer is enrolled.
+      - path: ./routing-peer.env
+        required: false
+    volumes:
+      - netbird_client:/var/lib/netbird
+    logging:
+      <<: *logging
+      options:
+        <<: *logopts
+        awslogs-group: /${name}/routing-peer
+
+volumes:
+  netbird_data:
+  letsencrypt:
+  netbird_client:
+
+networks:
+  netbird:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1

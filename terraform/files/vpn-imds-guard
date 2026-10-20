@@ -1,0 +1,12 @@
+#!/bin/bash
+# vpn-imds-guard: nothing but the host itself reaches the instance metadata service (169.254.169.254), where the
+# role's credentials live. Drops packets arriving on any interface (the WireGuard tunnel, Docker bridges) addressed
+# to it, in raw/PREROUTING, which never sees the host's own traffic. Defence in depth on top of IMDSv2 with hop
+# limit 1. Run every minute by a systemd timer, so a container restart or a firewall reload can't remove it.
+set -euo pipefail
+nft list table inet vpn_guard >/dev/null 2>&1 || nft add table inet vpn_guard
+nft list chain inet vpn_guard prerouting >/dev/null 2>&1 \
+  || nft add chain inet vpn_guard prerouting '{ type filter hook prerouting priority raw; policy accept; }'
+if ! nft list chain inet vpn_guard prerouting | grep -q '169.254.169.254'; then
+  nft add rule inet vpn_guard prerouting ip daddr 169.254.169.254 counter drop
+fi

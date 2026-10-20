@@ -1,0 +1,39 @@
+# Copy to terraform.tfvars and edit. Example: a small company with four teams.
+
+region            = "eu-west-1"
+name              = "team-vpn"
+domain            = "vpn.example.com"
+admin_email       = "vpn-admin@example.com"
+letsencrypt_email = "it@example.com"
+vpc_id            = "vpc-0123456789abcdef0"
+subnet_id         = "subnet-0123456789abcdef0" # public subnet
+alert_email       = "it@example.com"
+
+teams = {
+  marketing = {
+    description = "Marketing: the internal CMS and analytics dashboards only"
+    networks    = ["10.10.20.0/24"] # internal tools load balancer
+    ports       = ["443"]
+  }
+  development = {
+    description = "Developers: the dev environment (web, databases, cache)"
+    networks    = ["10.20.0.0/16"] # dev VPC
+    ports       = ["80", "443", "5432", "6379"]
+  }
+  data = {
+    description = "Data team: warehouse and BI tools"
+    networks    = ["10.10.20.0/24", "10.10.30.0/24"] # tools LB, warehouse subnet
+    ports       = ["443", "5439"]
+  }
+  devops = {
+    description = "DevOps: dev and prod networks, web and databases"
+    networks    = ["10.10.0.0/16", "10.20.0.0/16"] # prod VPC, dev VPC
+    ports       = ["443", "5432", "6379"]
+  }
+}
+
+# Lock the dashboard and API to the office or admin addresses (VPN clients don't need them):
+# admin_source_cidrs = ["203.0.113.10/32"]
+
+# "Sign in with Google" for staff (optional; local accounts with MFA otherwise):
+# google_client_id = "1234567890-abc.apps.googleusercontent.com"

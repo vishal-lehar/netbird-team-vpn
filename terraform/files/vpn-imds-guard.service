@@ -1,0 +1,8 @@
+[Unit]
+Description=Drop tunnel and container traffic to the instance metadata service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vpn/bin/vpn-imds-guard

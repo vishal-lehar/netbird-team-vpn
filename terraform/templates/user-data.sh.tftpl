@@ -1,0 +1,15 @@
+#!/bin/bash
+# First boot (cloud-init runs this once, as root). This header writes the host files (quoted heredocs: copied
+# verbatim); files/bootstrap.sh, appended below, installs and starts everything.
+set -euo pipefail
+install -d -m 0750 /opt/vpn /opt/vpn/bin /opt/vpn/traefik
+%{ for path, body in files ~}
+f="${path}"; mkdir -p "$${f%/*}"
+cat > "$f" <<'VPN_FILE_${substr(sha1(path), 0, 12)}'
+${trimsuffix(body, "\n")}
+VPN_FILE_${substr(sha1(path), 0, 12)}
+%{ endfor ~}
+chmod 0750 /opt/vpn/bin/*
+set -a
+. /opt/vpn/vpn.env
+set +a

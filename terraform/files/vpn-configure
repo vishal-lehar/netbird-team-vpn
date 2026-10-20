@@ -1,0 +1,154 @@
+#!/bin/bash
+# vpn-configure: puts the NetBird account into the state teams.json describes. Idempotent; safe to re-run.
+#
+# Run by bootstrap with the 1-day setup token. To re-run (after changing teams), as root on the host:
+#   /opt/vpn/bin/vpn-configure     and paste a 1-day token of an admin (Team > Users > you > Create token).
+#
+#   account   user approval required (new sign-ins wait until an admin approves them), Local MFA on, every device
+#             re-authenticates every VPN_PEER_LOGIN_EXPIRATION_HOURS, regular users see only their own devices
+#   policies  the built-in all-to-all "Default" is disabled. Nothing is allowed unless a team policy allows it.
+#   teams     for each team in teams.json: group team-<name> (members are set by admins in the dashboard), and a
+#             policy team-<name> -> its networks, on its ports only (TCP)
+#   routes    one route per network, carried by this host's routing peer (masqueraded), distributed only to the
+#             teams that list it; its access-control group net-<cidr> is what the team policies point at
+#   routing   this host enrolled as the routing peer, with a one-use setup key that is revoked straight after
+#   google    if VPN_GOOGLE_CLIENT_ID is set and <prefix>google-client-secret has a value: "Sign in with Google"
+# It adds and updates; it never deletes a group, route or policy you removed from teams.json (do that in the
+# dashboard, so a typo can't cut everyone off).
+set -euo pipefail
+umask 077
+[[ "$(id -u)" == 0 ]] || { echo "run as root"; exit 1; }
+set -a; . /opt/vpn/vpn.env; set +a
+cd /opt/vpn
+log() { echo "$(date -u +%FT%TZ) vpn-configure: $*"; }
+
+if [[ -z ${VPN_PAT:-} ]]; then
+  read -rs -p 'NetBird admin token: ' VPN_PAT; echo
+fi
+export VPN_PAT
+API=http://127.0.0.1:8081/api
+# The Authorization header is read from a file descriptor: the token never appears in the process list.
+auth() { printf 'Authorization: Token %s\n' "$VPN_PAT"; }
+api() { local m=$1 p=$2; shift 2; curl -fsS -X "$m" -H @<(auth) -H 'Content-Type: application/json' "$@" "$API$p"; }
+api GET /users/current >/dev/null || { log "token rejected"; exit 1; }
+
+# --- account ---------------------------------------------------------------------------------------------------
+ACCOUNT=$(api GET /accounts | jq '.[0]')
+jq --argjson h "$VPN_PEER_LOGIN_EXPIRATION_HOURS" '{settings: (.settings
+      | .peer_login_expiration_enabled = true
+      | .peer_login_expiration = ($h * 3600)
+      | .regular_users_view_blocked = true
+      | .local_mfa_enabled = true
+      | .extra = ((.extra // {peer_approval_enabled: false, network_traffic_logs_enabled: false,
+                              network_traffic_logs_groups: [], network_traffic_packet_counter_enabled: false})
+                  | .user_approval_required = true))}' <<<"$ACCOUNT" \
+  | api PUT "/accounts/$(jq -r .id <<<"$ACCOUNT")" -d @- >/dev/null
+log "account: user approval required, Local MFA on, re-login every ${VPN_PEER_LOGIN_EXPIRATION_HOURS}h"
+
+# --- helpers -------------------------------------------------------------------------------------------------------
+group_id() {
+  local id
+  id=$(api GET /groups | jq -r --arg n "$1" '.[] | select(.name == $n) | .id' | head -1)
+  if [[ -z $id ]]; then
+    id=$(jq -n --arg n "$1" '{name: $n}' | api POST /groups -d @- | jq -r .id)
+    log "group $1 created" >&2
+  fi
+  printf '%s' "$id"
+}
+slug() { tr './' '--' <<<"$1"; }
+
+# --- the all-to-all default off ------------------------------------------------------------------------------------
+api GET /policies | jq -c '.[] | select(.name == "Default" and .enabled)' | while read -r p; do
+  jq '{name, description, enabled: false, source_posture_checks: [],
+       rules: [.rules[] | .sources = [(.sources // [])[].id] | .destinations = [(.destinations // [])[].id]]}' <<<"$p" \
+    | api PUT "/policies/$(jq -r .id <<<"$p")" -d @- >/dev/null
+  log "policy Default (all to all) disabled"
+done
+
+# --- routing peer ----------------------------------------------------------------------------------------------------
+ROUTERS=$(group_id routing-peers)
+peer_id() {
+  api GET /peers | jq -r --arg g "$ROUTERS" '.[] | select(([(.groups // [])[].id] | index($g)) != null) | .id' | head -1
+}
+PEER=$(peer_id)
+if [[ -z $PEER ]]; then
+  KEY=$(jq -n --arg g "$ROUTERS" '{name: "routing peer (one use)", type: "one-off", expires_in: 86400,
+          auto_groups: [$g], usage_limit: 1, ephemeral: false}' | api POST /setup-keys -d @-)
+  KEY_ID=$(jq -r .id <<<"$KEY")
+  install -m 600 /dev/null routing-peer.env
+  jq -r '"NB_SETUP_KEY=" + .key' <<<"$KEY" >routing-peer.env
+  unset KEY
+  docker compose --profile routing-peer up -d netbird-client
+  for _ in $(seq 1 30); do PEER=$(peer_id); [[ -n $PEER ]] && break; sleep 10; done
+  rm -f routing-peer.env
+  jq -n --arg g "$ROUTERS" '{revoked: true, auto_groups: [$g]}' | api PUT "/setup-keys/$KEY_ID" -d @- >/dev/null
+  [[ -n $PEER ]] || { log "routing peer did not enrol (see its CloudWatch log group)"; exit 1; }
+  log "routing peer enrolled; its setup key is revoked"
+fi
+
+# --- teams: groups, routes, policies ----------------------------------------------------------------------------------
+declare -A TEAM_GROUP
+for team in $(jq -r 'keys[]' teams.json); do
+  TEAM_GROUP[$team]=$(group_id "team-$team")
+done
+
+ROUTES=$(api GET /routes)
+for cidr in $(jq -r '[.[].networks[]] | unique[]' teams.json); do
+  NETID="net-$(slug "$cidr")"
+  ACG=$(group_id "$NETID")
+  DIST=$(for team in $(jq -r --arg c "$cidr" 'to_entries[] | select(.value.networks | index($c)) | .key' teams.json); do
+           printf '%s\n' "${TEAM_GROUP[$team]}"; done | jq -R . | jq -sc 'sort')
+  R=$(jq -c --arg n "$NETID" '.[] | select(.network_id == $n)' <<<"$ROUTES")
+  if [[ -z $R ]]; then
+    jq -n --arg c "$cidr" --arg n "$NETID" --arg p "$PEER" --arg a "$ACG" --argjson g "$DIST" \
+       '{network_id: $n, description: ("Team network " + $c), enabled: true, peer: $p, network: $c, metric: 9999,
+         masquerade: true, keep_route: true, groups: $g, access_control_groups: [$a], skip_auto_apply: false}' \
+      | api POST /routes -d @- >/dev/null
+    log "route $cidr created"
+  elif [[ $(jq -c '.groups | sort' <<<"$R") != "$DIST" ]]; then
+    jq --argjson g "$DIST" '{network_id, description, enabled, peer, network, metric, masquerade, keep_route,
+        groups: $g, access_control_groups, skip_auto_apply: (.skip_auto_apply // false)}' <<<"$R" \
+      | api PUT "/routes/$(jq -r .id <<<"$R")" -d @- >/dev/null
+    log "route $cidr: distribution updated"
+  fi
+done
+
+for team in $(jq -r 'keys[]' teams.json); do
+  NAME="team-$team"
+  DESTS=$(for cidr in $(jq -r --arg t "$team" '.[$t].networks[]' teams.json); do
+            group_id "net-$(slug "$cidr")"; echo; done | jq -R 'select(length > 0)' | jq -sc 'sort')
+  PORTS=$(jq -c --arg t "$team" '.[$t].ports | map(tostring) | sort' teams.json)
+  DESC=$(jq -r --arg t "$team" '.[$t].description' teams.json)
+  WANT=$(jq -n --arg n "$NAME" --arg s "${TEAM_GROUP[$team]}" --argjson d "$DESTS" --argjson p "$PORTS" \
+    '[{name: $n, enabled: true, action: "accept", bidirectional: false, protocol: "tcp", ports: $p,
+       sources: [$s], destinations: $d}]')
+  P=$(api GET /policies | jq -c --arg n "$NAME" '.[] | select(.name == $n)')
+  if [[ -z $P ]]; then
+    jq -n --arg n "$NAME" --arg desc "$DESC" --argjson r "$WANT" '{name: $n, description: $desc, enabled: true, rules: $r}' \
+      | api POST /policies -d @- >/dev/null
+    log "policy $NAME created: TCP $(jq -r 'join(",")' <<<"$PORTS")"
+  elif [[ $(jq -c '[.rules[0] | (.ports // [] | sort), ([(.destinations // [])[].id] | sort)]' <<<"$P") != \
+          $(jq -c '[.[0] | .ports, .destinations]' <<<"$WANT") ]]; then
+    jq --arg desc "$DESC" --argjson r "$WANT" '{name, description: $desc, enabled: true, source_posture_checks: [], rules: $r}' <<<"$P" \
+      | api PUT "/policies/$(jq -r .id <<<"$P")" -d @- >/dev/null
+    log "policy $NAME updated: TCP $(jq -r 'join(",")' <<<"$PORTS")"
+  fi
+done
+
+# --- Google sign-in (optional) -------------------------------------------------------------------------------------
+if [[ -n ${VPN_GOOGLE_CLIENT_ID:-} ]] && ! api GET /identity-providers | jq -e '.[] | select(.name == "Google")' >/dev/null; then
+  if VPN_GOOGLE_SECRET=$(aws secretsmanager get-secret-value --region "$VPN_REGION" \
+        --secret-id "${VPN_SECRET_PREFIX}google-client-secret" --query SecretString --output text 2>/dev/null) \
+     && [[ -n $VPN_GOOGLE_SECRET ]]; then
+    export VPN_GOOGLE_SECRET
+    jq -n '{type: "google", name: "Google", issuer: "https://accounts.google.com",
+            client_id: env.VPN_GOOGLE_CLIENT_ID, client_secret: env.VPN_GOOGLE_SECRET}' \
+      | api POST /identity-providers -d @- >/dev/null
+    unset VPN_GOOGLE_SECRET
+    log "identity provider Google created: add its redirect URI (Settings > Identity Providers) to the Google client"
+  else
+    log "Google sign-in skipped: ${VPN_SECRET_PREFIX}google-client-secret has no value yet"
+  fi
+fi
+
+log "done: $(api GET /routes | jq length) routes, $(jq length teams.json) teams"

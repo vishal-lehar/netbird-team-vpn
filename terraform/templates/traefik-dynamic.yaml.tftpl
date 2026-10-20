@@ -1,0 +1,123 @@
+# What's public, and why:
+#   gRPC (management, signal)  VPN clients, from anywhere         long-lived streams, no extra middleware
+#   /relay, /ws-proxy          relayed WireGuard, from anywhere   no extra middleware
+#   /oauth2                    sign-in (embedded IdP)             rate-limited
+#   /oauth2/auth/local         local password sign-in             only from local_login_cidrs, 5 a minute
+#   /oauth2/device/code        new device-login codes             5 a minute per source address
+#   /api, dashboard            admin plane                        rate-limited; source allowlist if admin_source_cidrs
+#   /api/setup                 first-run owner creation           never: blocked here, done over localhost at boot
+http:
+  routers:
+    netbird-grpc:
+      rule: "Host(`${domain}`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))"
+      entryPoints: [websecure]
+      service: netbird-server-h2c
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+    netbird-relay:
+      rule: "Host(`${domain}`) && (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`))"
+      entryPoints: [websecure]
+      service: netbird-server
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+    netbird-auth:
+      rule: "Host(`${domain}`) && PathPrefix(`/oauth2`)"
+      entryPoints: [websecure]
+      service: netbird-server
+      middlewares: [rate-limit, security-headers]
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+    netbird-local-login:
+      rule: "Host(`${domain}`) && PathPrefix(`/oauth2/auth/local`)"
+      entryPoints: [websecure]
+      service: netbird-server
+      middlewares: [local-login-only, auth-rate-limit, security-headers]
+      priority: 200
+      tls:
+        certResolver: letsencrypt
+    netbird-device-code:
+      rule: "Host(`${domain}`) && Path(`/oauth2/device/code`)"
+      entryPoints: [websecure]
+      service: netbird-server
+      middlewares: [auth-rate-limit, security-headers]
+      priority: 200
+      tls:
+        certResolver: letsencrypt
+    netbird-api:
+      rule: "Host(`${domain}`) && PathPrefix(`/api`)"
+      entryPoints: [websecure]
+      service: netbird-server
+      middlewares: [%{ if length(admin_source_cidrs) > 0 }admin-only, %{ endif }rate-limit, security-headers]
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+    netbird-setup-blocked:
+      # Exact path: a PathPrefix would also catch /api/setup-keys, which the dashboard uses.
+      rule: "Host(`${domain}`) && Path(`/api/setup`)"
+      entryPoints: [websecure]
+      service: netbird-server
+      middlewares: [deny-all]
+      priority: 1000
+      tls:
+        certResolver: letsencrypt
+    dashboard:
+      rule: "Host(`${domain}`)"
+      entryPoints: [websecure]
+      service: dashboard
+      middlewares: [%{ if length(admin_source_cidrs) > 0 }admin-only, %{ endif }security-headers]
+      priority: 1
+      tls:
+        certResolver: letsencrypt
+
+  middlewares:
+    deny-all:
+      ipAllowList:
+        sourceRange: ["127.0.0.1/32"]
+%{ if length(admin_source_cidrs) > 0 ~}
+    admin-only:
+      ipAllowList:
+        sourceRange:
+%{ for c in admin_source_cidrs ~}
+          - "${c}"
+%{ endfor ~}
+%{ endif ~}
+    local-login-only:
+      ipAllowList:
+        sourceRange:
+%{ for c in local_login_cidrs ~}
+          - "${c}"
+%{ endfor ~}
+    rate-limit:
+      rateLimit:
+        average: 20
+        burst: 60
+        period: 1s
+    auth-rate-limit:
+      rateLimit:
+        average: 5
+        burst: 5
+        period: 1m
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+
+  services:
+    netbird-server:
+      loadBalancer:
+        servers:
+          - url: "http://netbird-server:80"
+    netbird-server-h2c:
+      loadBalancer:
+        servers:
+          - url: "h2c://netbird-server:80"
+    dashboard:
+      loadBalancer:
+        servers:
+          - url: "http://dashboard:80"

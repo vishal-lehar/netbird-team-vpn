@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 627" width="1200" height="627" font-family="Inter, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a-mkt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#d9480f"/></marker>
+    <marker id="a-dev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2b8a3e"/></marker>
+    <marker id="a-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7048e8"/></marker>
+    <marker id="a-ops" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1971c2"/></marker>
+    <marker id="a-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#495057"/></marker>
+  </defs>
+
+  <rect width="1200" height="627" fill="#ffffff"/>
+  <text x="40" y="44" font-size="24" font-weight="700" fill="#212529">Team-scoped VPN on AWS</text>
+  <text x="40" y="70" font-size="14" fill="#495057">Self-hosted NetBird (WireGuard) · SSO/MFA · every team reaches only its networks and ports · all in Terraform</text>
+
+  <!-- People -->
+  <text x="40" y="112" font-size="13" font-weight="700" fill="#495057" letter-spacing="1">PEOPLE</text>
+  <g font-size="14" font-weight="600">
+    <rect x="40" y="124" width="170" height="54" rx="10" fill="#fff4e6" stroke="#d9480f" stroke-width="1.5"/>
+    <text x="56" y="148" fill="#d9480f">Marketing</text><text x="56" y="167" font-size="12" font-weight="400" fill="#495057">tools only · 443</text>
+    <rect x="40" y="194" width="170" height="54" rx="10" fill="#ebfbee" stroke="#2b8a3e" stroke-width="1.5"/>
+    <text x="56" y="218" fill="#2b8a3e">Developers</text><text x="56" y="237" font-size="12" font-weight="400" fill="#495057">dev env · 80 443 5432 6379</text>
+    <rect x="40" y="264" width="170" height="54" rx="10" fill="#f3f0ff" stroke="#7048e8" stroke-width="1.5"/>
+    <text x="56" y="288" fill="#7048e8">Data team</text><text x="56" y="307" font-size="12" font-weight="400" fill="#495057">BI + warehouse · 443 5439</text>
+    <rect x="40" y="334" width="170" height="54" rx="10" fill="#e7f5ff" stroke="#1971c2" stroke-width="1.5"/>
+    <text x="56" y="358" fill="#1971c2">DevOps</text><text x="56" y="377" font-size="12" font-weight="400" fill="#495057">prod + dev · 443 5432 6379</text>
+  </g>
+  <text x="40" y="416" font-size="12" fill="#495057">NetBird client · sign-in: SSO or local MFA</text>
+  <text x="40" y="433" font-size="12" fill="#495057">re-authenticate every 24 h · admin approval</text>
+
+  <!-- AWS account -->
+  <rect x="280" y="96" width="890" height="514" rx="14" fill="#f8f9fa" stroke="#adb5bd" stroke-dasharray="6 4"/>
+  <text x="298" y="120" font-size="13" font-weight="700" fill="#495057" letter-spacing="1">AWS ACCOUNT</text>
+
+  <!-- VPN host -->
+  <rect x="300" y="136" width="330" height="330" rx="12" fill="#ffffff" stroke="#212529" stroke-width="1.5"/>
+  <text x="316" y="160" font-size="15" font-weight="700" fill="#212529">VPN host (EC2 Graviton)</text>
+  <text x="316" y="178" font-size="11.5" fill="#495057">public subnet · Elastic IP · no SSH (Session Manager)</text>
+  <g font-size="13">
+    <rect x="316" y="192" width="298" height="50" rx="8" fill="#f1f3f5" stroke="#868e96"/>
+    <text x="330" y="213" font-weight="700" fill="#212529">Traefik · TLS</text>
+    <text x="330" y="231" font-size="11.5" fill="#495057">rate limits · /api/setup blocked · admin allowlist</text>
+    <rect x="316" y="252" width="298" height="50" rx="8" fill="#f1f3f5" stroke="#868e96"/>
+    <text x="330" y="273" font-weight="700" fill="#212529">netbird-server + dashboard</text>
+    <text x="330" y="291" font-size="11.5" fill="#495057">management · signal · relay · STUN · built-in IdP</text>
+    <rect x="316" y="312" width="298" height="50" rx="8" fill="#fff9db" stroke="#f08c00"/>
+    <text x="330" y="333" font-weight="700" fill="#212529">Routing peer</text>
+    <text x="330" y="351" font-size="11.5" fill="#495057">routes per team · forwards only allowed ports</text>
+    <rect x="316" y="372" width="298" height="78" rx="8" fill="#fff5f5" stroke="#e03131"/>
+    <text x="330" y="393" font-weight="700" fill="#212529">Hardening</text>
+    <text x="330" y="411" font-size="11.5" fill="#495057">IMDSv2 hop 1 + nftables metadata guard</text>
+    <text x="330" y="427" font-size="11.5" fill="#495057">owner created over localhost before TLS opens</text>
+    <text x="330" y="443" font-size="11.5" fill="#495057">default all-to-all policy disabled</text>
+  </g>
+
+  <!-- People to host -->
+  <path d="M210,256 C245,256 255,217 296,217" fill="none" stroke="#495057" stroke-width="2" marker-end="url(#a-gray)"/>
+  <text x="214" y="196" font-size="11.5" fill="#495057">WireGuard</text>
+  <text x="214" y="210" font-size="11.5" fill="#495057">UDP 51820</text>
+
+  <!-- Prod VPC -->
+  <rect x="700" y="136" width="450" height="190" rx="12" fill="#ffffff" stroke="#1971c2" stroke-width="1.5"/>
+  <text x="716" y="160" font-size="15" font-weight="700" fill="#1971c2">Prod VPC</text>
+  <g font-size="13">
+    <rect x="716" y="174" width="200" height="56" rx="8" fill="#f1f3f5" stroke="#868e96"/>
+    <text x="730" y="197" font-weight="700" fill="#212529">Internal tools</text><text x="730" y="216" font-size="11.5" fill="#495057">CMS · BI · :443</text>
+    <rect x="932" y="174" width="200" height="56" rx="8" fill="#f1f3f5" stroke="#868e96"/>
+    <text x="946" y="197" font-weight="700" fill="#212529">Warehouse</text><text x="946" y="216" font-size="11.5" fill="#495057">:5439</text>
+    <rect x="716" y="248" width="416" height="56" rx="8" fill="#f1f3f5" stroke="#868e96"/>
+    <text x="730" y="271" font-weight="700" fill="#212529">Databases and cache</text><text x="730" y="290" font-size="11.5" fill="#495057">:5432 · :6379</text>
+  </g>
+
+  <!-- Dev VPC -->
+  <rect x="700" y="346" width="450" height="120" rx="12" fill="#ffffff" stroke="#2b8a3e" stroke-width="1.5"/>
+  <text x="716" y="370" font-size="15" font-weight="700" fill="#2b8a3e">Dev VPC</text>
+  <rect x="716" y="384" width="416" height="62" rx="8" fill="#f1f3f5" stroke="#868e96"/>
+  <text x="730" y="408" font-size="13" font-weight="700" fill="#212529">Dev apps, databases, cache</text>
+  <text x="730" y="427" font-size="11.5" fill="#495057">:80 · :443 · :5432 · :6379</text>
+
+  <!-- Policy arrows from routing peer -->
+  <path d="M614,325 C660,300 680,205 712,202" fill="none" stroke="#d9480f" stroke-width="2.2" marker-end="url(#a-mkt)"/>
+  <path d="M614,332 C670,320 690,215 712,214" fill="none" stroke="#7048e8" stroke-width="2.2" stroke-dasharray="7 4" marker-end="url(#a-data)"/>
+  <path d="M614,328 C636,128 700,124 860,124 C990,124 1030,134 1032,170" fill="none" stroke="#7048e8" stroke-width="2.2" stroke-dasharray="7 4" marker-end="url(#a-data)"/>
+  <path d="M614,338 C665,330 685,280 712,276" fill="none" stroke="#1971c2" stroke-width="2.2" marker-end="url(#a-ops)"/>
+  <path d="M614,344 C665,360 685,400 712,404" fill="none" stroke="#2b8a3e" stroke-width="2.2" marker-end="url(#a-dev)"/>
+  <path d="M614,350 C660,380 680,425 712,428" fill="none" stroke="#1971c2" stroke-width="2.2" stroke-dasharray="2 4" marker-end="url(#a-ops)"/>
+
+  <!-- AWS services -->
+  <rect x="300" y="486" width="200" height="60" rx="10" fill="#ffffff" stroke="#868e96"/>
+  <text x="316" y="510" font-size="13" font-weight="700" fill="#212529">Secrets Manager</text>
+  <text x="316" y="528" font-size="11.5" fill="#495057">generated on the host</text>
+  <rect x="516" y="486" width="200" height="60" rx="10" fill="#ffffff" stroke="#868e96"/>
+  <text x="532" y="510" font-size="13" font-weight="700" fill="#212529">CloudWatch</text>
+  <text x="532" y="528" font-size="11.5" fill="#495057">logs · auto-recover · alerts</text>
+  <rect x="732" y="486" width="200" height="60" rx="10" fill="#ffffff" stroke="#868e96"/>
+  <text x="748" y="510" font-size="13" font-weight="700" fill="#212529">Daily snapshots</text>
+  <text x="748" y="528" font-size="11.5" fill="#495057">14 days (DLM)</text>
+  <rect x="948" y="486" width="202" height="60" rx="10" fill="#ffffff" stroke="#868e96"/>
+  <text x="964" y="510" font-size="13" font-weight="700" fill="#212529">Terraform</text>
+  <text x="964" y="528" font-size="11.5" fill="#495057">one root · PR-reviewed</text>
+  <path d="M465,466 L430,483" fill="none" stroke="#495057" stroke-width="1.5" marker-end="url(#a-gray)"/>
+  <path d="M520,466 L580,483" fill="none" stroke="#495057" stroke-width="1.5" marker-end="url(#a-gray)"/>
+
+  <!-- Legend -->
+  <g font-size="11.5" fill="#495057">
+    <text x="300" y="574">Arrows = team policy: a device gets routes only for its team's networks; the routing peer forwards only that team's ports.</text>
+    <text x="300" y="591">No team is allowed anything by default. A person in several teams gets the union.</text>
+  </g>
+</svg>
